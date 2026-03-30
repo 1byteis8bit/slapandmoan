@@ -1,92 +1,178 @@
 # slapandmoan
 
-Intel MacBook 내장 마이크로 `타격음 / 박수 / 키보드 타이핑`을 분리해 보고, 타격음을 감지하면 사운드를 재생하는 Python CLI 프로토타입이다.
+`slapandmoan` is a Python CLI prototype for simple impact-sound detection from a laptop microphone.
+It can:
 
-## 설치
+- record labeled audio samples
+- profile WAV files and extract basic features
+- run a live detector that reacts to low-frequency impact-like sounds
+
+The current detector is rule-based. It is useful for quick experiments, threshold tuning, and collecting baseline data before moving to a learned model.
+
+## Supported Platforms
+
+- Intel macOS
+- Windows
+
+Platform-specific install files and runtime profiles are separated:
+
+- install files:
+  - `requirements/macos-intel.txt`
+  - `requirements/windows.txt`
+- runtime profiles:
+  - `configs/intel_macbook.toml`
+  - `configs/windows.toml`
+
+## Quick Start
+
+### Intel macOS
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements/macos-intel.txt
 ```
 
-macOS에서는 실행 전에 터미널 또는 Python 실행 앱에 `Microphone` 권한을 줘야 한다.
-`sounddevice`가 `PortAudio library not found`를 내면 먼저 아래를 설치한다.
+If `sounddevice` fails with a PortAudio error, install PortAudio first:
 
 ```bash
 brew install portaudio
 ```
 
-## 1. 데이터 수집
+You also need to grant microphone permission to the terminal or Python app you use.
 
-장치 목록 확인:
+### Windows
 
-```bash
-python record_dataset.py dummy --list-devices
+PowerShell:
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements/windows.txt
 ```
 
-샘플 수집:
+If audio input does not work, confirm that:
+
+- your microphone is not locked by another app
+- you are using a 64-bit Python build
+- the input device is visible via `--list-devices`
+
+## Workflow
+
+### 1. List audio devices
+
+Intel macOS:
 
 ```bash
-python record_dataset.py laptop_hit --count 30 --duration 1.2
-python record_dataset.py clap --count 30 --duration 1.2
-python record_dataset.py keyboard_typing --count 30 --duration 1.2
+python record_dataset.py dummy --config configs/intel_macbook.toml --list-devices
 ```
 
-## 2. 프로파일링
+Windows:
+
+```powershell
+python record_dataset.py dummy --config configs/windows.toml --list-devices
+```
+
+### 2. Record a dataset
 
 ```bash
-python profile_audio.py data/raw --output-dir analysis
+python record_dataset.py laptop_hit --config configs/intel_macbook.toml --count 30 --duration 1.2
+python record_dataset.py clap --config configs/intel_macbook.toml --count 30 --duration 1.2
+python record_dataset.py keyboard_typing --config configs/intel_macbook.toml --count 30 --duration 1.2
 ```
 
-출력:
+On Windows, replace `configs/intel_macbook.toml` with `configs/windows.toml`.
+
+### 3. Profile recorded WAV files
+
+```bash
+python profile_audio.py data/raw --config configs/intel_macbook.toml --output-dir analysis
+```
+
+Outputs:
+
 - `analysis/summary.csv`
 - `analysis/plots/*.png`
 
-## 3. 실시간 감지
+### 4. Run live detection
 
-효과음 WAV 사용:
-
-```bash
-python detect_live.py --sound assets/moan.wav
-```
-
-WAV가 없을 때 macOS `say` fallback 사용:
+Use a custom WAV file:
 
 ```bash
-python detect_live.py --speak-text "ah"
+python detect_live.py --config configs/intel_macbook.toml --sound /path/to/effect.wav
 ```
 
-드라이런:
+Use built-in speech fallback instead:
 
 ```bash
-python detect_live.py --dry-run
+python detect_live.py --config configs/intel_macbook.toml --speak-text "ah"
 ```
 
-민감도 조정 예시:
+Windows example:
+
+```powershell
+python detect_live.py --config configs/windows.toml --speak-text "ah"
+```
+
+Dry run:
 
 ```bash
-python detect_live.py --min-peak 0.12 --sta-lta-threshold 3.2 --low-band-ratio-min 0.38
+python detect_live.py --config configs/intel_macbook.toml --dry-run
 ```
 
-## 파일 구성
+Tune thresholds from the CLI:
 
-- `record_dataset.py`: 라벨별 샘플 수집
-- `profile_audio.py`: 파형, 스펙트로그램, 수치 특징 추출
-- `detect_live.py`: 실시간 감지 및 사운드 재생
-- `slapandmoan/audio_core.py`: 필터, 특징 추출, 규칙 기반 감지
-- `tests/test_audio_core.py`: 합성 신호 기반 단위 테스트
+```bash
+python detect_live.py --config configs/intel_macbook.toml --min-peak 0.12 --sta-lta-threshold 3.2 --low-band-ratio-min 0.38
+```
 
-## 현재 기본값
+## Configuration
 
-- 샘플레이트: `16 kHz`
-- 청크: `1024 frames`
-- 롤링 분석 창: `1초`
-- 필터: `80~2500 Hz` band-pass
-- 쿨다운: `1.5초`
+The runtime profile is loaded from `--config`, and CLI flags override values from the profile.
 
-## 제한 사항
+Main configuration fields include:
 
-- v1은 규칙 기반 감지다. 환경이 바뀌면 threshold 재조정이 필요하다.
-- 재생 음원이 마이크로 다시 들어올 수 있으므로, 기본적으로 재생 중 감지를 억제한다.
-- 메뉴바 앱 패키징은 아직 포함하지 않는다.
+- sample rate and chunk size
+- band-pass filter range
+- cooldown and STA window
+- threshold values such as peak, RMS, STA/LTA, low-band ratio, ZCR, and centroid
+- playback gain and suppression while playing
+
+Start from:
+
+- `configs/intel_macbook.toml` on Intel MacBook
+- `configs/windows.toml` on Windows
+
+Then tune thresholds for your actual microphone and room noise.
+
+## Repository Layout
+
+- `record_dataset.py`: record labeled WAV samples and metadata
+- `profile_audio.py`: generate plots and CSV summaries for WAV inputs
+- `detect_live.py`: run the live detector and trigger playback
+- `slapandmoan/audio_core.py`: feature extraction and rule-based detection logic
+- `slapandmoan/config.py`: detection config model and TOML loading
+- `slapandmoan/platform.py`: platform-specific audio and speech helpers
+- `tests/`: unit tests for audio logic and platform config handling
+
+## Testing
+
+```bash
+python -m unittest discover -s tests
+```
+
+## Current Defaults
+
+- sample rate: `16 kHz`
+- chunk size: `1024`
+- rolling analysis window: `1.0 s`
+- band-pass filter: `80 Hz` to `2500 Hz`
+- cooldown: `1.5 s`
+
+## Limitations
+
+- This is a rule-based baseline, not a trained classifier.
+- Thresholds will need retuning across microphones, desks, rooms, and background noise conditions.
+- Playback can leak back into the microphone, so detection is suppressed while playback is active by default.
+- `--speak-text` uses `say` on macOS and PowerShell TTS on Windows.
+- No GUI or menu bar app packaging is included.

@@ -5,6 +5,7 @@ import argparse
 import csv
 import queue
 import subprocess
+import shutil
 import sys
 import threading
 import time
@@ -14,7 +15,8 @@ import numpy as np
 import soundfile as sf
 
 from slapandmoan.audio_core import ImpactDetector, RollingAudioBuffer, summarize_result
-from slapandmoan.config import DetectionConfig
+from slapandmoan.config import DetectionConfig, load_detection_config, merge_detection_config
+from slapandmoan.platform import build_speech_command, sounddevice_load_error_message, speech_backend_name
 
 
 class EffectPlayer:
@@ -46,9 +48,16 @@ class EffectPlayer:
                 self.sd.wait()
                 return
 
-            if self.speak_text and sys.platform == "darwin":
-                subprocess.run(["say", self.speak_text], check=False)
-                return
+            if self.speak_text:
+                command = build_speech_command(self.speak_text)
+                if command and shutil.which(command[0]):
+                    subprocess.run(command, check=False)
+                    return
+
+                backend_name = speech_backend_name()
+                if backend_name:
+                    print(f"triggered, but {backend_name} is not available", flush=True)
+                    return
 
             print("triggered, but no playback asset configured", flush=True)
         finally:
@@ -57,26 +66,27 @@ class EffectPlayer:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Detect laptop impacts from the microphone.")
+    parser.add_argument("--config", default=None, help="Path to a TOML detection profile")
     parser.add_argument("--device", default=None, help="sounddevice input device")
     parser.add_argument("--list-devices", action="store_true", help="Print audio devices and exit")
     parser.add_argument("--sound", default=None, help="WAV file to play when an impact is detected")
     parser.add_argument(
         "--speak-text",
         default=None,
-        help="Fallback macOS say(1) text when --sound is not provided",
+        help="Built-in speech fallback when --sound is not provided (macOS say / Windows PowerShell TTS)",
     )
     parser.add_argument("--log-csv", default="logs/events.csv", help="CSV file for feature/event logs")
     parser.add_argument("--dry-run", action="store_true", help="Log detections without playing output")
-    parser.add_argument("--sample-rate", type=int, default=DetectionConfig().sample_rate)
-    parser.add_argument("--chunk-size", type=int, default=DetectionConfig().chunk_size)
-    parser.add_argument("--cooldown", type=float, default=DetectionConfig().cooldown_sec)
-    parser.add_argument("--min-peak", type=float, default=DetectionConfig().min_peak)
-    parser.add_argument("--min-rms", type=float, default=DetectionConfig().min_rms)
-    parser.add_argument("--sta-lta-threshold", type=float, default=DetectionConfig().sta_lta_threshold)
-    parser.add_argument("--low-band-ratio-min", type=float, default=DetectionConfig().low_band_ratio_min)
-    parser.add_argument("--zcr-max", type=float, default=DetectionConfig().zcr_max)
-    parser.add_argument("--centroid-max-hz", type=float, default=DetectionConfig().centroid_max_hz)
-    parser.add_argument("--playback-gain", type=float, default=DetectionConfig().playback_gain)
+    parser.add_argument("--sample-rate", type=int, default=None)
+    parser.add_argument("--chunk-size", type=int, default=None)
+    parser.add_argument("--cooldown", type=float, default=None)
+    parser.add_argument("--min-peak", type=float, default=None)
+    parser.add_argument("--min-rms", type=float, default=None)
+    parser.add_argument("--sta-lta-threshold", type=float, default=None)
+    parser.add_argument("--low-band-ratio-min", type=float, default=None)
+    parser.add_argument("--zcr-max", type=float, default=None)
+    parser.add_argument("--centroid-max-hz", type=float, default=None)
+    parser.add_argument("--playback-gain", type=float, default=None)
     return parser.parse_args()
 
 
@@ -84,15 +94,14 @@ def require_sounddevice():
     try:
         import sounddevice as sd  # type: ignore
     except OSError as exc:
-        raise SystemExit(
-            "sounddevice could not load PortAudio. On macOS install PortAudio first, "
-            "for example with `brew install portaudio`."
-        ) from exc
+        raise SystemExit(sounddevice_load_error_message()) from exc
     return sd
 
 
 def build_config(args: argparse.Namespace) -> DetectionConfig:
-    return DetectionConfig(
+    base = load_detection_config(args.config)
+    return merge_detection_config(
+        base,
         sample_rate=args.sample_rate,
         chunk_size=args.chunk_size,
         cooldown_sec=args.cooldown,
@@ -115,7 +124,7 @@ def main() -> int:
 
     config = build_config(args)
     detector = ImpactDetector(config)
-    player = EffectPlayer(sd, args.sound, args.playback_gain, speak_text=args.speak_text)
+    player = EffectPlayer(sd, args.sound, config.playback_gain, speak_text=args.speak_text)
     rolling = RollingAudioBuffer(config.rolling_window_samples)
     audio_queue: queue.Queue[np.ndarray] = queue.Queue()
 
@@ -148,6 +157,8 @@ def main() -> int:
         audio_queue.put(indata[:, 0].copy())
 
     print("starting live detector")
+    if args.config:
+        print(f"loaded config: {args.config}")
     print("press Ctrl+C to stop")
 
     try:

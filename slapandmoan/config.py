@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import tomllib
+from dataclasses import dataclass, fields
+from pathlib import Path
+from typing import Any, Mapping
 
 
 @dataclass(slots=True)
@@ -38,3 +41,45 @@ class DetectionConfig:
     @property
     def sta_samples(self) -> int:
         return max(1, int(self.sample_rate * (self.sta_ms / 1_000.0)))
+
+
+CONFIG_FIELD_NAMES = {field.name for field in fields(DetectionConfig)}
+TUPLE_FIELDS = {"profile_low_band_hz", "profile_high_band_hz"}
+
+
+def _normalize_config_values(values: Mapping[str, Any]) -> dict[str, Any]:
+    unknown_keys = sorted(set(values) - CONFIG_FIELD_NAMES)
+    if unknown_keys:
+        keys = ", ".join(unknown_keys)
+        raise ValueError(f"unknown detection config keys: {keys}")
+
+    normalized: dict[str, Any] = {}
+    for key, value in values.items():
+        if key in TUPLE_FIELDS and isinstance(value, list):
+            normalized[key] = tuple(value)
+            continue
+        normalized[key] = value
+    return normalized
+
+
+def load_detection_config(path: str | Path | None = None) -> DetectionConfig:
+    if path is None:
+        return DetectionConfig()
+
+    config_path = Path(path).expanduser()
+    with config_path.open("rb") as handle:
+        loaded = tomllib.load(handle)
+
+    normalized = _normalize_config_values(loaded)
+    return DetectionConfig(**normalized)
+
+
+def merge_detection_config(base: DetectionConfig, **overrides: Any) -> DetectionConfig:
+    merged = {field.name: getattr(base, field.name) for field in fields(DetectionConfig)}
+    for key, value in overrides.items():
+        if value is None:
+            continue
+        merged[key] = value
+
+    normalized = _normalize_config_values(merged)
+    return DetectionConfig(**normalized)

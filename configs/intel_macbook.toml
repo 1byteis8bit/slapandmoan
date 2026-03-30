@@ -1,0 +1,26 @@
+# Intel MacBook internal microphone baseline.
+sample_rate = 16000
+channels = 1
+dtype = "float32"
+chunk_size = 1024
+rolling_window_sec = 1.0
+
+filter_low_hz = 80.0
+filter_high_hz = 2500.0
+filter_order = 4
+
+sta_ms = 96.0
+cooldown_sec = 1.5
+
+min_peak = 0.10
+min_rms = 0.015
+sta_lta_threshold = 2.8
+low_band_ratio_min = 0.34
+zcr_max = 0.22
+centroid_max_hz = 1800.0
+
+profile_low_band_hz = [80.0, 400.0]
+profile_high_band_hz = [1500.0, 4000.0]
+
+playback_gain = 1.0
+suppress_while_playing = true

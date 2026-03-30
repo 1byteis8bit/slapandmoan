@@ -11,14 +11,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from slapandmoan.audio_core import extract_profile_features
-from slapandmoan.config import DetectionConfig
+from slapandmoan.config import load_detection_config, merge_detection_config
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Profile WAV files and save plots/features.")
     parser.add_argument("inputs", nargs="+", help="WAV files or directories containing WAV files")
+    parser.add_argument("--config", default=None, help="Path to a TOML detection profile")
     parser.add_argument("--output-dir", default="analysis", help="Where plots and CSV summary are written")
-    parser.add_argument("--sample-rate", type=int, default=DetectionConfig().sample_rate)
+    parser.add_argument("--sample-rate", type=int, default=None)
     return parser.parse_args()
 
 
@@ -57,13 +58,15 @@ def main() -> int:
     output_dir = Path(args.output_dir)
     plots_dir = output_dir / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
-    config = DetectionConfig(sample_rate=args.sample_rate)
+    config = merge_detection_config(load_detection_config(args.config), sample_rate=args.sample_rate)
+    if args.config:
+        print(f"loaded config: {args.config}")
 
     csv_path = output_dir / "summary.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
         writer = None
         for file_path in files:
-            y, sr = librosa.load(file_path, sr=args.sample_rate, mono=True)
+            y, sr = librosa.load(file_path, sr=config.sample_rate, mono=True)
             features = extract_profile_features(y, config)
             row = {"file": str(file_path), **features}
 
