@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import tomllib
 from dataclasses import dataclass, fields
 from pathlib import Path
@@ -45,6 +46,17 @@ class DetectionConfig:
 
 CONFIG_FIELD_NAMES = {field.name for field in fields(DetectionConfig)}
 TUPLE_FIELDS = {"profile_low_band_hz", "profile_high_band_hz"}
+EMBEDDED_PLATFORM_DEFAULTS: dict[str, dict[str, Any]] = {
+    "darwin": {},
+    "win32": {},
+    "linux": {},
+}
+
+
+def _platform_key() -> str:
+    if sys.platform.startswith("linux"):
+        return "linux"
+    return sys.platform
 
 
 def _normalize_config_values(values: Mapping[str, Any]) -> dict[str, Any]:
@@ -62,16 +74,22 @@ def _normalize_config_values(values: Mapping[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def default_detection_config() -> DetectionConfig:
+    values = _normalize_config_values(EMBEDDED_PLATFORM_DEFAULTS.get(_platform_key(), {}))
+    return DetectionConfig(**values)
+
+
 def load_detection_config(path: str | Path | None = None) -> DetectionConfig:
+    base = default_detection_config()
     if path is None:
-        return DetectionConfig()
+        return base
 
     config_path = Path(path).expanduser()
     with config_path.open("rb") as handle:
         loaded = tomllib.load(handle)
 
     normalized = _normalize_config_values(loaded)
-    return DetectionConfig(**normalized)
+    return merge_detection_config(base, **normalized)
 
 
 def merge_detection_config(base: DetectionConfig, **overrides: Any) -> DetectionConfig:

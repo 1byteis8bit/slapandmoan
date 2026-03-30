@@ -4,8 +4,6 @@ from __future__ import annotations
 import argparse
 import csv
 import queue
-import subprocess
-import shutil
 import sys
 import threading
 import time
@@ -16,7 +14,7 @@ import soundfile as sf
 
 from slapandmoan.audio_core import ImpactDetector, RollingAudioBuffer, summarize_result
 from slapandmoan.config import DetectionConfig, load_detection_config, merge_detection_config
-from slapandmoan.platform import build_speech_command, sounddevice_load_error_message, speech_backend_name
+from slapandmoan.platform import sounddevice_load_error_message, speak_text_blocking, speech_backend_name
 
 
 class EffectPlayer:
@@ -49,9 +47,7 @@ class EffectPlayer:
                 return
 
             if self.speak_text:
-                command = build_speech_command(self.speak_text)
-                if command and shutil.which(command[0]):
-                    subprocess.run(command, check=False)
+                if speak_text_blocking(self.speak_text):
                     return
 
                 backend_name = speech_backend_name()
@@ -66,14 +62,14 @@ class EffectPlayer:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Detect laptop impacts from the microphone.")
-    parser.add_argument("--config", default=None, help="Path to a TOML detection profile")
+    parser.add_argument("--config", default=None, help="Optional TOML overrides for the embedded defaults")
     parser.add_argument("--device", default=None, help="sounddevice input device")
     parser.add_argument("--list-devices", action="store_true", help="Print audio devices and exit")
     parser.add_argument("--sound", default=None, help="WAV file to play when an impact is detected")
     parser.add_argument(
         "--speak-text",
         default=None,
-        help="Built-in speech fallback when --sound is not provided (macOS say / Windows PowerShell TTS)",
+        help="Built-in speech fallback when --sound is not provided (macOS say / Windows in-process TTS / Linux spd-say or espeak-ng)",
     )
     parser.add_argument("--log-csv", default="logs/events.csv", help="CSV file for feature/event logs")
     parser.add_argument("--dry-run", action="store_true", help="Log detections without playing output")

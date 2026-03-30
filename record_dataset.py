@@ -17,7 +17,7 @@ from slapandmoan.platform import sounddevice_load_error_message
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Record labeled impact/clap/typing samples.")
     parser.add_argument("label", help="Sample label, e.g. laptop_hit, clap, keyboard_typing")
-    parser.add_argument("--config", default=None, help="Path to a TOML detection profile")
+    parser.add_argument("--config", default=None, help="Optional TOML overrides for the embedded defaults")
     parser.add_argument("--output-dir", default="data/raw", help="Directory for WAV files and metadata")
     parser.add_argument("--count", type=int, default=10, help="Number of samples to record")
     parser.add_argument("--duration", type=float, default=1.2, help="Recording duration in seconds")

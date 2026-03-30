@@ -1,29 +1,35 @@
 # slapandmoan
 
-`slapandmoan` is a Python CLI prototype for simple impact-sound detection from a laptop microphone.
+`slapandmoan` is a Python CLI prototype for impact-sound detection from a laptop microphone.
+
 It can:
 
 - record labeled audio samples
-- profile WAV files and extract basic features
+- profile WAV files and extract simple features
 - run a live detector that reacts to low-frequency impact-like sounds
 
-The current detector is rule-based. It is useful for quick experiments, threshold tuning, and collecting baseline data before moving to a learned model.
+The detector is rule-based. The goal is fast experimentation, not production-grade classification.
 
 ## Supported Platforms
 
 - Intel macOS
 - Windows
+- Ubuntu
 
-Platform-specific install files and runtime profiles are separated:
+## Zero-Config Usage
 
-- install files:
-  - `requirements/macos-intel.txt`
-  - `requirements/windows.txt`
-- runtime profiles:
-  - `configs/intel_macbook.toml`
-  - `configs/windows.toml`
+You do not need a config file to get started.
 
-## Quick Start
+Default settings are embedded in the code, and the CLI uses them automatically.
+Most users should:
+
+1. install dependencies for their platform
+2. list audio devices once
+3. run live detection
+
+The `configs/` directory is only for people who want to tweak thresholds or keep their own profiles.
+
+## Install
 
 ### Intel macOS
 
@@ -33,7 +39,7 @@ source .venv/bin/activate
 pip install -r requirements/macos-intel.txt
 ```
 
-If `sounddevice` fails with a PortAudio error, install PortAudio first:
+If `sounddevice` fails with a PortAudio error:
 
 ```bash
 brew install portaudio
@@ -43,50 +49,69 @@ You also need to grant microphone permission to the terminal or Python app you u
 
 ### Windows
 
-PowerShell:
+No PowerShell activation is required:
 
-```powershell
+```bat
 py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements/windows.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements/windows.txt
 ```
 
-If audio input does not work, confirm that:
+If you do not activate the virtual environment, run commands with `.\.venv\Scripts\python.exe`.
 
-- your microphone is not locked by another app
-- you are using a 64-bit Python build
-- the input device is visible via `--list-devices`
+### Ubuntu
 
-## Workflow
+```bash
+sudo apt update
+sudo apt install -y python3-venv portaudio19-dev espeak-ng
+python3 -m venv .venv
+./.venv/bin/python -m pip install -r requirements/ubuntu.txt
+```
+
+If you do not activate the virtual environment, run commands with `./.venv/bin/python`.
+
+## Fastest Start
+
+### Intel macOS
+
+```bash
+python record_dataset.py dummy --list-devices
+python detect_live.py --speak-text "ah"
+```
+
+### Windows
+
+```bat
+.\.venv\Scripts\python.exe record_dataset.py dummy --list-devices
+.\.venv\Scripts\python.exe detect_live.py --speak-text "ah"
+```
+
+### Ubuntu
+
+```bash
+./.venv/bin/python record_dataset.py dummy --list-devices
+./.venv/bin/python detect_live.py --speak-text "ah"
+```
+
+## Common Workflow
 
 ### 1. List audio devices
 
-Intel macOS:
-
 ```bash
-python record_dataset.py dummy --config configs/intel_macbook.toml --list-devices
-```
-
-Windows:
-
-```powershell
-python record_dataset.py dummy --config configs/windows.toml --list-devices
+python record_dataset.py dummy --list-devices
 ```
 
 ### 2. Record a dataset
 
 ```bash
-python record_dataset.py laptop_hit --config configs/intel_macbook.toml --count 30 --duration 1.2
-python record_dataset.py clap --config configs/intel_macbook.toml --count 30 --duration 1.2
-python record_dataset.py keyboard_typing --config configs/intel_macbook.toml --count 30 --duration 1.2
+python record_dataset.py laptop_hit --count 30 --duration 1.2
+python record_dataset.py clap --count 30 --duration 1.2
+python record_dataset.py keyboard_typing --count 30 --duration 1.2
 ```
-
-On Windows, replace `configs/intel_macbook.toml` with `configs/windows.toml`.
 
 ### 3. Profile recorded WAV files
 
 ```bash
-python profile_audio.py data/raw --config configs/intel_macbook.toml --output-dir analysis
+python profile_audio.py data/raw --output-dir analysis
 ```
 
 Outputs:
@@ -99,69 +124,48 @@ Outputs:
 Use a custom WAV file:
 
 ```bash
-python detect_live.py --config configs/intel_macbook.toml --sound /path/to/effect.wav
+python detect_live.py --sound /path/to/effect.wav
 ```
 
-Use built-in speech fallback instead:
+Use built-in speech fallback:
 
 ```bash
-python detect_live.py --config configs/intel_macbook.toml --speak-text "ah"
-```
-
-Windows example:
-
-```powershell
-python detect_live.py --config configs/windows.toml --speak-text "ah"
+python detect_live.py --speak-text "ah"
 ```
 
 Dry run:
 
 ```bash
-python detect_live.py --config configs/intel_macbook.toml --dry-run
+python detect_live.py --dry-run
 ```
 
 Tune thresholds from the CLI:
 
 ```bash
-python detect_live.py --config configs/intel_macbook.toml --min-peak 0.12 --sta-lta-threshold 3.2 --low-band-ratio-min 0.38
+python detect_live.py --min-peak 0.12 --sta-lta-threshold 3.2 --low-band-ratio-min 0.38
 ```
 
-## Configuration
+## Optional Custom Configs
 
-The runtime profile is loaded from `--config`, and CLI flags override values from the profile.
+If you want to keep your own tuned profile, pass `--config`.
 
-Main configuration fields include:
+Example files are provided here:
 
-- sample rate and chunk size
-- band-pass filter range
-- cooldown and STA window
-- threshold values such as peak, RMS, STA/LTA, low-band ratio, ZCR, and centroid
-- playback gain and suppression while playing
+- `configs/intel_macbook.toml`
+- `configs/windows.toml`
+- `configs/ubuntu.toml`
 
-Start from:
-
-- `configs/intel_macbook.toml` on Intel MacBook
-- `configs/windows.toml` on Windows
-
-Then tune thresholds for your actual microphone and room noise.
-
-## Repository Layout
-
-- `record_dataset.py`: record labeled WAV samples and metadata
-- `profile_audio.py`: generate plots and CSV summaries for WAV inputs
-- `detect_live.py`: run the live detector and trigger playback
-- `slapandmoan/audio_core.py`: feature extraction and rule-based detection logic
-- `slapandmoan/config.py`: detection config model and TOML loading
-- `slapandmoan/platform.py`: platform-specific audio and speech helpers
-- `tests/`: unit tests for audio logic and platform config handling
-
-## Testing
+Example:
 
 ```bash
-python -m unittest discover -s tests
+python detect_live.py --config configs/ubuntu.toml --speak-text "ah"
 ```
 
-## Current Defaults
+Config files are optional overrides. They are not required for normal use.
+
+## Embedded Defaults
+
+The built-in defaults currently use:
 
 - sample rate: `16 kHz`
 - chunk size: `1024`
@@ -169,10 +173,30 @@ python -m unittest discover -s tests
 - band-pass filter: `80 Hz` to `2500 Hz`
 - cooldown: `1.5 s`
 
+CLI flags override the embedded defaults.
+If `--config` is provided, the file overrides the embedded defaults, and CLI flags still win last.
+
+## Repository Layout
+
+- `record_dataset.py`: record labeled WAV samples and metadata
+- `profile_audio.py`: generate plots and CSV summaries for WAV inputs
+- `detect_live.py`: run the live detector and trigger playback
+- `slapandmoan/audio_core.py`: feature extraction and rule-based detection logic
+- `slapandmoan/config.py`: embedded defaults and config loading
+- `slapandmoan/platform.py`: platform-specific audio and speech helpers
+- `configs/`: optional example config files
+- `tests/`: unit tests
+
+## Testing
+
+```bash
+python -m unittest discover -s tests
+```
+
 ## Limitations
 
 - This is a rule-based baseline, not a trained classifier.
 - Thresholds will need retuning across microphones, desks, rooms, and background noise conditions.
 - Playback can leak back into the microphone, so detection is suppressed while playback is active by default.
-- `--speak-text` uses `say` on macOS and PowerShell TTS on Windows.
+- `--speak-text` uses `say` on macOS, in-process `pyttsx3` on Windows, and `spd-say`/`espeak-ng` on Linux.
 - No GUI or menu bar app packaging is included.
